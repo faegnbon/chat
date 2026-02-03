@@ -1,0 +1,217 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Анонимный Чат</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: Arial, sans-serif; }
+        body { background: linear-gradient(135deg, #667eea, #764ba2); min-height: 100vh; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); overflow: hidden; }
+        header { background: linear-gradient(to right, #4f46e5, #7c3aed); color: white; padding: 25px; text-align: center; }
+        header h1 { font-size: 2rem; margin-bottom: 10px; }
+        .status { background: rgba(255,255,255,0.2); padding: 8px 15px; border-radius: 20px; display: inline-block; font-size: 0.9rem; }
+        .chat-box { display: flex; flex-direction: column; height: 70vh; }
+        .messages { flex: 1; padding: 20px; overflow-y: auto; background: #f8f9fa; }
+        .message { background: white; padding: 12px 15px; margin-bottom: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-left: 4px solid #4f46e5; }
+        .input-area { padding: 20px; border-top: 2px solid #eee; background: white; }
+        textarea { width: 100%; height: 80px; padding: 15px; border: 2px solid #e0e0e0; border-radius: 10px; resize: none; font-size: 16px; margin-bottom: 15px; }
+        textarea:focus { outline: none; border-color: #4f46e5; }
+        button { background: linear-gradient(to right, #4f46e5, #7c3aed); color: white; border: none; padding: 12px 25px; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        button:hover { opacity: 0.9; }
+        .controls { display: flex; gap: 15px; }
+        input[type="text"] { flex: 1; padding: 12px 15px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 16px; }
+        .connected { color: #10b981; }
+        .disconnected { color: #ef4444; }
+        footer { text-align: center; padding: 15px; background: #f8f9fa; color: #666; border-top: 2px solid #eee; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💬 Анонимный Чат в реальном времени</h1>
+            <p>Общайтесь без регистрации!</p>
+            <div class="status">
+                <span id="status">🔌 Подключение...</span> | 
+                <span id="online">👥 Онлайн: 0</span>
+            </div>
+        </header>
+
+        <div class="chat-box">
+            <div class="messages" id="messages">
+                <div style="text-align:center;color:#888;padding:40px;font-style:italic;">
+                    Сообщений пока нет. Будьте первым, кто напишет!
+                </div>
+            </div>
+            
+            <div class="input-area">
+                <textarea id="messageInput" placeholder="Введите ваше сообщение здесь..." maxlength="500"></textarea>
+                <div class="controls">
+                    <input type="text" id="username" placeholder="Ваше имя (необязательно)" maxlength="20" value="Аноним">
+                    <button id="sendBtn">📨 Отправить сообщение</button>
+                </div>
+                <div style="margin-top:10px;font-size:14px;color:#666;">
+                    💡 <strong>Как поделиться:</strong> Просто отправьте эту ссылку друзьям: 
+                    <span id="currentUrl" style="color:#4f46e5;font-weight:bold;"></span>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>🔥 Чат работает на Firebase. Все сообщения видны всем пользователям!</p>
+        </footer>
+    </div>
+
+    <!-- Firebase (старая версия для совместимости) -->
+    <script src="https://www.gstatic.com/firebasejs/7.24.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/7.24.0/firebase-database.js"></script>
+    
+    <script>
+        // ВАША КОНФИГУРАЦИЯ FIREBASE
+        const firebaseConfig = {
+            apiKey: "AIzaSyB7pOiYzqqQmYvHqKoiQTNM1blgfYxFdtg",
+            authDomain: "webprilog.firebaseapp.com",
+            databaseURL: "https://webprilog-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "webprilog",
+            storageBucket: "webprilog.firebasestorage.app",
+            messagingSenderId: "232290873777",
+            appId: "1:232290873777:web:62dd5eb1e91a6a2184cd90"
+        };
+        
+        // Показываем текущий URL
+        document.getElementById('currentUrl').textContent = window.location.href;
+        
+        // Инициализация Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
+        console.log("✅ Firebase подключен!");
+        
+        // Получаем элементы
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const usernameInput = document.getElementById('username');
+        const statusSpan = document.getElementById('status');
+        const onlineSpan = document.getElementById('online');
+        
+        // Отправка сообщения
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            const username = usernameInput.value.trim() || 'Аноним';
+            
+            if (!text) {
+                alert('✍️ Введите сообщение!');
+                return;
+            }
+            
+            const message = {
+                text: text,
+                username: username,
+                timestamp: Date.now(),
+                time: new Date().toLocaleTimeString('ru-RU', { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    hour12: false 
+                }),
+                date: new Date().toLocaleDateString('ru-RU')
+            };
+            
+            // Отправляем в Firebase
+            database.ref('messages').push(message)
+                .then(() => {
+                    // Успешно отправлено
+                    messageInput.value = '';
+                    messageInput.focus();
+                })
+                .catch(error => {
+                    alert('❌ Ошибка отправки: ' + error.message);
+                });
+        }
+        
+        // Получаем и отображаем сообщения
+        database.ref('messages').limitToLast(50).on('value', (snapshot) => {
+            messagesDiv.innerHTML = '';
+            
+            if (!snapshot.exists()) {
+                messagesDiv.innerHTML = '<div style="text-align:center;color:#888;padding:40px;font-style:italic;">Сообщений пока нет. Будьте первым!</div>';
+                return;
+            }
+            
+            const messages = [];
+            snapshot.forEach((childSnapshot) => {
+                const message = childSnapshot.val();
+                message.id = childSnapshot.key;
+                messages.push(message);
+            });
+            
+            // Сортируем по времени (старые вверху)
+            messages.sort((a, b) => a.timestamp - b.timestamp);
+            
+            // Отображаем сообщения
+            messages.forEach((message) => {
+                const messageElement = document.createElement('div');
+                messageElement.className = 'message';
+                messageElement.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+                        <span style="font-weight:bold;color:#4f46e5;">👤 ${escapeHtml(message.username)}</span>
+                        <span style="font-size:0.85rem;color:#666;">🕐 ${message.time} (${message.date})</span>
+                    </div>
+                    <div style="line-height:1.5;">${escapeHtml(message.text)}</div>
+                `;
+                messagesDiv.appendChild(messageElement);
+            });
+            
+            // Прокручиваем вниз
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+        
+        // Мониторинг подключения
+        database.ref('.info/connected').on('value', (snapshot) => {
+            if (snapshot.val() === true) {
+                statusSpan.innerHTML = '✅ Подключено к чату';
+                statusSpan.className = 'connected';
+            } else {
+                statusSpan.innerHTML = '❌ Отключено от сервера';
+                statusSpan.className = 'disconnected';
+            }
+        });
+        
+        // Счетчик онлайн пользователей
+        const presenceRef = database.ref('presence');
+        const userRef = presenceRef.push();
+        
+        // Удаляем при отключении
+        userRef.onDisconnect().remove();
+        userRef.set(true);
+        
+        // Обновляем счетчик
+        presenceRef.on('value', (snapshot) => {
+            const count = snapshot.numChildren();
+            onlineSpan.textContent = `👥 Онлайн: ${count}`;
+        });
+        
+        // Экранирование HTML (безопасность)
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Автофокус на поле ввода
+        messageInput.focus();
+        
+        // Уведомление об успешной загрузке
+        console.log("🚀 Чат успешно загружен и готов к работе!");
+        alert("✅ Чат загружен! Отправьте ссылку друзьям для общения.");
+    </script>
+</body>
+</html>
